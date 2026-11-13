@@ -28,9 +28,9 @@ REXTINA_MIN_WORKING ?= 30
 UNAME := $(shell uname)
 DOMAIN := gui/$(shell id -u)
 
-.PHONY: install install-watch install-action uninstall
+.PHONY: install install-watch install-action uninstall uninstall-watch
 
-install: install-watch install-action
+install: install-action
 
 install-watch:
 	@mkdir -p "$(SHARE_DIR)/bin" "$(SHARE_DIR)/lua"
@@ -59,12 +59,17 @@ ifeq ($(UNAME),Darwin)
 	@echo "action installed in $(CONFIG_DIR)"
 endif
 
-uninstall:
+uninstall-watch:
 ifeq ($(UNAME),Darwin)
 	@launchctl bootout $(DOMAIN)/com.rextina.watch 2> /dev/null || true
 	@rm -f "$(AGENT_PLIST)"
+endif
+	@rm -rf "$(SHARE_DIR)"
+	@echo "watcher removed"
+
+uninstall: uninstall-watch
+ifeq ($(UNAME),Darwin)
 	@sh bin/rextina-init remove "$(CONFIG_DIR)/init.lua"
 	@rm -f "$(CONFIG_DIR)/rextina.lua" "$(CONFIG_DIR)/rextina_status.lua"
 	@"$(REX_PATH)" config reload > /dev/null 2>&1 || true
 endif
-	@rm -rf "$(SHARE_DIR)"
