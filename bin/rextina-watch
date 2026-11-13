@@ -1,0 +1,61 @@
+#!/bin/sh
+rex=${REXTINA_REX:-rex}
+here=$(cd "$(dirname "$0")" && pwd)
+watch_lua=${REXTINA_WATCH_LUA:-$here/../lua/watch.lua}
+min_working=${REXTINA_MIN_WORKING:-30}
+backoff_min=${REXTINA_BACKOFF_MIN:-5}
+backoff_max=${REXTINA_BACKOFF_MAX:-300}
+once=0
+[ "${1:-}" = "--once" ] && once=1
+
+instance() {
+  "$rex" --autostart=false --timeout 5s "$@" api call server.status 2>/dev/null |
+    jq -r '.instance_id // empty' 2>/dev/null
+}
+
+watch_one() {
+  label=$1
+  delay=$backoff_min
+  child=
+  trap '[ -n "$child" ] && kill "$child" 2>/dev/null; exit 0' TERM INT
+  while :; do
+    if [ -n "$label" ]; then
+      local_instance=$(instance)
+      if [ -n "$local_instance" ] && [ "$(instance -S "$label")" = "$local_instance" ]; then
+        return 0
+      fi
+    fi
+    start=$(date +%s)
+    if [ -n "$label" ]; then
+      "$rex" --autostart=false -S "$label" "do" --all "$watch_lua" "host=$label" "min_working=$min_working" &
+    else
+      "$rex" --autostart=false "do" --all "$watch_lua" "min_working=$min_working" &
+    fi
+    child=$!
+    wait "$child"
+    [ "$once" -eq 1 ] && return 0
+    if [ $(($(date +%s) - start)) -ge 60 ]; then
+      delay=$backoff_min
+    fi
+    sleep "$delay" &
+    child=$!
+    wait "$child"
+    delay=$((delay * 2))
+    [ "$delay" -gt "$backoff_max" ] && delay=$backoff_max
+  done
+}
+
+labels=$("$rex" --autostart=false hosts --json 2>/dev/null | jq -r '.hosts[]?.host.label // empty' 2>/dev/null)
+
+pids=
+watch_one "" &
+pids="$pids $!"
+for label in $labels; do
+  watch_one "$label" &
+  pids="$pids $!"
+done
+
+# shellcheck disable=SC2086
+trap 'kill $pids 2>/dev/null; wait; exit 0' TERM INT
+wait
+exit 0

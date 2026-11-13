@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.rextina.watch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>@WATCH@</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>REXTINA_REX</key>
+    <string>@REX@</string>
+    <key>REXTINA_MIN_WORKING</key>
+    <string>@MIN_WORKING@</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>@LOG@</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG@</string>
+</dict>
+</plist>

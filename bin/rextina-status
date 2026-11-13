@@ -1,0 +1,63 @@
+#!/bin/sh
+app=claude-code
+if [ "${1:-}" = "--app" ]; then
+  app=${2:-}
+  [ "$#" -ge 2 ] || exit 0
+  shift 2
+fi
+state=${1:-}
+kind=${2:-}
+msg=${3:-}
+
+[ -n "${REX_BLOCK:-}" ] || exit 0
+
+case $state in
+  idle | working | blocked | done | error | clear) ;;
+  *) exit 0 ;;
+esac
+
+if [ -n "${REXTINA_TTY:-}" ]; then
+  target=$REXTINA_TTY
+elif (: > /dev/tty) 2>/dev/null; then
+  target=/dev/tty
+else
+  parent_tty=$(ps -o tty= -p "$PPID" 2>/dev/null | tr -d ' ')
+  case $parent_tty in
+    '' | '?' | '??' | -) exit 0 ;;
+  esac
+  target=/dev/$parent_tty
+fi
+
+body="state=$state"
+if [ "$state" != clear ]; then
+  if [ "$state" = blocked ]; then
+    case $kind in
+      permission | question | auth) body="$body:kind=$kind" ;;
+    esac
+  fi
+  case $app in
+    '' | *[!A-Za-z0-9_.+-]*) ;;
+    *) [ "${#app}" -le 32 ] && body="$body:app=$app" ;;
+  esac
+  if [ -n "$msg" ]; then
+    clean=$(printf '%s' "$msg" | LC_ALL=C tr '[:cntrl:]' ' ')
+    if command -v iconv > /dev/null 2>&1; then
+      n=200
+      while [ "$n" -gt 196 ]; do
+        cut=$(printf '%s' "$clean" | head -c "$n")
+        if printf '%s' "$cut" | iconv -f UTF-8 -t UTF-8 > /dev/null 2>&1; then
+          break
+        fi
+        cut=
+        n=$((n - 1))
+      done
+      clean=$cut
+    else
+      clean=$(printf '%s' "$clean" | head -c 200)
+    fi
+    [ -n "$clean" ] && body="$body:msg=$(printf '%s' "$clean" | base64 | tr -d '\n')"
+  fi
+fi
+
+{ printf '\033]7501;%s\033\134' "$body" > "$target"; } 2>/dev/null
+exit 0

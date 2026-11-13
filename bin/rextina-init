@@ -1,0 +1,39 @@
+#!/bin/sh
+action=${1:-}
+file=${2:-}
+line='require("rextina")'
+pattern='^[[:space:]]*require("rextina")[[:space:]]*$'
+
+[ -n "$file" ] || {
+  echo "usage: rextina-init add|remove FILE" >&2
+  exit 2
+}
+
+case $action in
+  add)
+    if [ -f "$file" ] && grep -q "$pattern" "$file"; then
+      exit 0
+    fi
+    if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then
+      printf '\n' >> "$file"
+    fi
+    printf '%s\n' "$line" >> "$file"
+    ;;
+  remove)
+    [ -f "$file" ] || exit 0
+    tmp=$(mktemp)
+    grep -v "$pattern" "$file" > "$tmp"
+    status=$?
+    if [ "$status" -gt 1 ]; then
+      rm -f "$tmp"
+      echo "rextina-init: could not read $file" >&2
+      exit 1
+    fi
+    cat "$tmp" > "$file"
+    rm -f "$tmp"
+    ;;
+  *)
+    echo "usage: rextina-init add|remove FILE" >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,42 @@
+#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_REX_LOG"
+server=
+command=
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    -S)
+      server=$2
+      shift 2
+      ;;
+    --timeout)
+      shift 2
+      ;;
+    --*)
+      shift
+      ;;
+    *)
+      command=$1
+      break
+      ;;
+  esac
+done
+case $command in
+  hosts)
+    printf '%s\n' '{"home":{"label":""},"hosts":[{"host":{"label":"alpha"}},{"host":{"label":"beta"}}]}'
+    ;;
+  api)
+    case $server in
+      '' | alpha) printf '%s\n' '{"instance_id":"local"}' ;;
+      *)
+        [ -n "${FAKE_REX_BETA_LOCAL:-}" ] && [ -e "$FAKE_REX_BETA_LOCAL" ] || exit 1
+        printf '%s\n' '{"instance_id":"local"}'
+        ;;
+    esac
+    ;;
+  do)
+    if [ -n "${FAKE_REX_DO_SLEEP:-}" ]; then
+      exec sleep "$FAKE_REX_DO_SLEEP"
+    fi
+    exit 1
+    ;;
+esac
