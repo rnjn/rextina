@@ -3,6 +3,7 @@ action=${1:-}
 file=${2:-}
 line='require("rextina")'
 pattern='^[[:space:]]*require("rextina")[[:space:]]*$'
+loaded='require[^a-zA-Z_]*"rextina"'
 
 [ -n "$file" ] || {
   echo "usage: rextina-init add|remove FILE" >&2
@@ -11,7 +12,7 @@ pattern='^[[:space:]]*require("rextina")[[:space:]]*$'
 
 case $action in
   add)
-    if [ -f "$file" ] && grep -q "$pattern" "$file"; then
+    if [ -f "$file" ] && grep -v '^[[:space:]]*--' "$file" | grep -q "$loaded"; then
       exit 0
     fi
     if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then

@@ -52,4 +52,12 @@ chmod 600 "$f"
 "$bin" remove "$f"
 assert_eq "$f" "$(find "$f" -perm 600)" t_mode_preserved
 
+f="$tmp/pcall.lua"
+printf 'if pcall(require, "rextina") then\n  rex.bind("cmd+shift+a", "rextina_next")\nend\n' > "$f"
+cp "$f" "$tmp/pcall.orig"
+"$bin" add "$f"
+assert_eq "$(od -c "$tmp/pcall.orig")" "$(od -c "$f")" t_add_recognises_guarded_require
+"$bin" remove "$f"
+assert_eq "$(od -c "$tmp/pcall.orig")" "$(od -c "$f")" t_remove_leaves_guarded_require
+
 finish
