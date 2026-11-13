@@ -10,6 +10,18 @@ local M = {}
 
 local TERMINAL = "com.superlogical.terminal"
 
+local function attached(api, session_id, method, args)
+  local result, err = api.call(method, args)
+  if result ~= nil then
+    return result, err, false
+  end
+  if not api.call("session.attach", { session_id = session_id }) then
+    return nil, err, false
+  end
+  result, err = api.call(method, args)
+  return result, err, true
+end
+
 function M.collect(api, host)
   local items = {}
   local listed = api.call("session.list")
@@ -17,7 +29,7 @@ function M.collect(api, host)
     return items
   end
   for _, session in ipairs(listed.sessions or {}) do
-    local view = api.call("session.view", { session_id = session.session_id })
+    local view, _, did_attach = attached(api, session.session_id, "session.view", { session_id = session.session_id })
     for _, window in ipairs(type(view) == "table" and view.windows or {}) do
       for _, layer in ipairs(window.layers or {}) do
         for _, block in ipairs(layer.blocks or {}) do
@@ -41,6 +53,9 @@ function M.collect(api, host)
           end
         end
       end
+    end
+    if did_attach then
+      api.call("session.detach", { session_id = session.session_id })
     end
   end
   return items
@@ -69,7 +84,11 @@ end
 function M.go(item, apis, queue)
   for _, entry in ipairs(apis) do
     if entry.host == item.host then
-      entry.api.call("session.focus_block", { session_id = item.session_id, block_id = item.block_id })
+      local _, _, did_attach = attached(entry.api, item.session_id, "session.focus_block",
+        { session_id = item.session_id, block_id = item.block_id })
+      if did_attach then
+        entry.api.call("session.detach", { session_id = item.session_id })
+      end
       break
     end
   end

@@ -11,6 +11,17 @@ local function fake(statuses, opts)
       end
       return { sessions = { { session_id = "session:s1", label = "infra" } } }
     end
+    if method == "session.attach" then
+      api.attached = true
+      return {}
+    end
+    if method == "session.detach" then
+      api.attached = false
+      return {}
+    end
+    if opts.needs_attach and not api.attached and method ~= "session.list" then
+      return nil, "stream is not attached to session"
+    end
     if method == "session.view" then
       return rex.json.decode(fixture("view.json"))
     end
@@ -152,4 +163,34 @@ test("collect asks every terminal block and no other", function()
   end
   table.sort(asked)
   eq({ "block:b1", "block:b2", "block:b3" }, asked)
+end)
+
+test("collect attaches to a session that refuses unattached calls, then detaches", function()
+  local api = fake({ ["block:b1"] = { { state = "blocked" } } }, { needs_attach = true })
+  eq({ "block:b1" }, ids(N.collect(api, "fred")))
+  eq(false, api.attached)
+end)
+
+test("collect does not attach when the session answers", function()
+  local api = fake({ ["block:b1"] = { { state = "blocked" } } })
+  N.collect(api, nil)
+  for _, call in ipairs(api.calls) do
+    eq(true, call[1] ~= "session.attach" and call[1] ~= "session.detach")
+  end
+end)
+
+test("go attaches before focusing when the session refuses unattached calls", function()
+  local api = fake({}, { needs_attach = true })
+  local focused = false
+  local call = api.call
+  api.call = function(method, args)
+    local result, err = call(method, args)
+    if method == "session.focus_block" and result then
+      focused = true
+    end
+    return result, err
+  end
+  N.go({ host = "fred", session_id = "session:s1", window_id = "window:w1", block_id = "block:b1" },
+    { { host = "fred", api = api } }, function() end)
+  eq(true, focused)
 end)
