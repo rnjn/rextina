@@ -194,3 +194,19 @@ test("go attaches before focusing when the session refuses unattached calls", fu
     { { host = "fred", api = api } }, function() end)
   eq(true, focused)
 end)
+
+test("the action looks only at the local server even when hosts are visible", function()
+  local lib = {
+    call = function() end,
+    servers = function()
+      return { "fred", "clu" }
+    end,
+    server = function()
+      error("must not connect to other hosts")
+    end,
+  }
+  local list = N.local_apis(lib)
+  eq(1, #list)
+  eq(nil, list[1].host)
+  eq(lib.call, list[1].api.call)
+end)

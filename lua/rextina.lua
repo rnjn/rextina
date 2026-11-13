@@ -95,15 +95,8 @@ function M.go(item, apis, queue)
   pcall(queue, "session.select", { session_id = item.session_id, window_id = item.window_id })
 end
 
-local function apis()
-  local list = { { api = { call = rex.call } } }
-  for _, label in ipairs(rex.servers() or {}) do
-    local ok, server = pcall(rex.server, label)
-    if ok and server then
-      list[#list + 1] = { host = label, api = { call = server.call } }
-    end
-  end
-  return list
+function M.local_apis(lib)
+  return { { api = { call = lib.call } } }
 end
 
 local memory = {}
@@ -115,7 +108,7 @@ if rex and rex.action then
     category = "Rextina",
     keywords = "agent claude blocked done attention jump next",
     run = function(ctx)
-      local servers = apis()
+      local servers = M.local_apis(rex)
       local item = M.find_next(servers, ctx.block_id, memory.last)
       memory.last = item and item.block_id
       if not item then
