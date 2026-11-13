@@ -1,4 +1,9 @@
 REXTINA_REX ?= rex
+REX_DEFAULT := $(HOME)/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex
+REX_PATH := $(shell sh -c 'command -v "$(REXTINA_REX)" || { [ -x "$(REX_DEFAULT)" ] && echo "$(REX_DEFAULT)"; }')
+ifneq ($(REX_PATH),)
+REXTINA_REX := $(REX_PATH)
+endif
 export REXTINA_REX
 
 SHELL_TESTS := $(wildcard test/*_test.sh)
@@ -20,7 +25,6 @@ CONFIG_DIR ?= $(or $(XDG_CONFIG_HOME),$(HOME)/.config)/rex
 AGENT_PLIST ?= $(HOME)/Library/LaunchAgents/com.rextina.watch.plist
 WATCH_LOG ?= $(HOME)/Library/Logs/rextina-watch.log
 REXTINA_MIN_WORKING ?= 30
-REX_PATH := $(shell command -v "$(REXTINA_REX)")
 UNAME := $(shell uname)
 DOMAIN := gui/$(shell id -u)
 
@@ -33,7 +37,7 @@ install-watch:
 	@cp bin/rextina-status bin/rextina-watch bin/rextina-init "$(SHARE_DIR)/bin/"
 	@cp lua/watch.lua lua/rextina_status.lua "$(SHARE_DIR)/lua/"
 ifeq ($(UNAME),Darwin)
-	@test -n "$(REX_PATH)" || { echo "rex not found; set REXTINA_REX"; exit 1; }
+	@test -n "$(REX_PATH)" || { echo "rex not found; run: make install REXTINA_REX=/path/to/rex"; exit 1; }
 	@mkdir -p "$(dir $(AGENT_PLIST))" "$(dir $(WATCH_LOG))"
 	@sed -e 's|@WATCH@|$(SHARE_DIR)/bin/rextina-watch|' -e 's|@REX@|$(REX_PATH)|' \
 		-e 's|@MIN_WORKING@|$(REXTINA_MIN_WORKING)|' -e 's|@LOG@|$(WATCH_LOG)|g' \
@@ -46,6 +50,7 @@ endif
 
 install-action:
 ifeq ($(UNAME),Darwin)
+	@test -n "$(REX_PATH)" || { echo "rex not found; run: make install REXTINA_REX=/path/to/rex"; exit 1; }
 	@mkdir -p "$(CONFIG_DIR)"
 	@cp lua/rextina.lua lua/rextina_status.lua "$(CONFIG_DIR)/"
 	@sh bin/rextina-init add "$(CONFIG_DIR)/init.lua"

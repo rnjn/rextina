@@ -9,7 +9,7 @@ Rex already shows which programs are working, blocked or done in its sidebar, ta
 
 ## Requirements
 
-- Rex, with the `rex` command on your `PATH`
+- Rex. `make` finds `rex` on your `PATH` or in the Mac app's default location; otherwise pass `REXTINA_REX=/path/to/rex`
 - macOS for notifications and the action
 - `jq` (at `/usr/bin/jq` on current macOS)
 - Claude Code 2.1.311 or later, run directly in a Rex pane
