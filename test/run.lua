@@ -1,7 +1,7 @@
 local root = rex.args.root
 package.path = root .. "/lua/?.lua;" .. root .. "/test/?.lua;" .. package.path
 
-local specs = { "status_spec", "watch_spec", "next_spec", "restore_spec" }
+local specs = { "status_spec", "watch_spec", "next_spec", "restore_spec", "store_spec" }
 local stats = { count = 0, failures = 0 }
 
 local function show(v)
