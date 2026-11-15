@@ -1,0 +1,10 @@
+#!/bin/sh
+rex=${REXTINA_REX:-rex}
+here=$(cd "$(dirname "$0")" && pwd)
+
+out=$("$rex" --autostart=false "do" "$here/../lua/save.lua" 2>&1)
+case $out in
+  '' | *"no Rex server is running"*) exit 0 ;;
+esac
+printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$out" >&2
+exit 0

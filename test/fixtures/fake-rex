@@ -34,6 +34,16 @@ case $command in
     esac
     ;;
   do)
+    if [ -n "${FAKE_REX_DO_OUT:-}" ]; then
+      printf '%s\n' "$FAKE_REX_DO_OUT"
+    fi
+    if [ -n "${FAKE_REX_DO_ERR:-}" ]; then
+      printf '%s\n' "$FAKE_REX_DO_ERR" >&2
+      exit 1
+    fi
+    if [ -n "${FAKE_REX_DO_OK:-}" ]; then
+      exit 0
+    fi
     if [ -n "${FAKE_REX_DO_SLEEP:-}" ]; then
       exec sleep "$FAKE_REX_DO_SLEEP"
     fi
