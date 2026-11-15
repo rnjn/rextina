@@ -210,3 +210,56 @@ test("the action looks only at the local server even when hosts are visible", fu
   eq(nil, list[1].host)
   eq(lib.call, list[1].api.call)
 end)
+
+local function done_apis()
+  return { { api = fake({
+    ["block:b1"] = { { state = "done", updated_at = "t1" } },
+    ["block:b3"] = { { state = "done", updated_at = "t2" } },
+  }) } }
+end
+
+test("a done pane is offered once, then skipped", function()
+  local seen = {}
+  local first = N.find_next(done_apis(), "block:elsewhere", nil, seen)
+  eq("block:b1", first.block_id)
+  local second = N.find_next(done_apis(), "block:b1", first.block_id, seen)
+  eq("block:b3", second.block_id)
+  eq(nil, N.find_next(done_apis(), "block:b3", second.block_id, seen))
+end)
+
+test("a done pane is offered again after the agent finishes another turn", function()
+  local seen = { ["block:b1"] = "t1", ["block:b3"] = "t2" }
+  local apis = { { api = fake({
+    ["block:b1"] = { { state = "done", updated_at = "t9" } },
+    ["block:b3"] = { { state = "done", updated_at = "t2" } },
+  }) } }
+  eq("block:b1", N.find_next(apis, "block:elsewhere", nil, seen).block_id)
+end)
+
+test("the pane you are in counts as seen", function()
+  local seen = {}
+  local item = N.find_next(done_apis(), "block:b1", nil, seen)
+  eq("block:b3", item.block_id)
+  eq("t1", seen["block:b1"])
+end)
+
+test("blocked and failed panes are always offered", function()
+  local seen = { ["block:b1"] = "t1", ["block:b3"] = "t2" }
+  local apis = { { api = fake({
+    ["block:b1"] = { { state = "blocked", updated_at = "t1" } },
+    ["block:b3"] = { { state = "error", updated_at = "t2" } },
+  }) } }
+  eq("block:b1", N.find_next(apis, "block:elsewhere", nil, seen).block_id)
+  eq("block:b3", N.find_next(apis, "block:b1", "block:b1", seen).block_id)
+  eq("block:b1", N.find_next(apis, "block:b3", "block:b3", seen).block_id)
+end)
+
+test("seen entries for panes that no longer exist are dropped", function()
+  local seen = { ["block:gone"] = "t0" }
+  N.find_next(done_apis(), "block:elsewhere", nil, seen)
+  eq(nil, seen["block:gone"])
+end)
+
+test("find_next works without a seen table", function()
+  eq("block:b1", N.find_next(done_apis(), "block:elsewhere", nil).block_id)
+end)

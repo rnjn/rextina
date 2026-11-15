@@ -61,24 +61,42 @@ function M.collect(api, host)
   return items
 end
 
-function M.find_next(apis, current_block_id, last_block_id)
-  local all, seen = {}, {}
+function M.find_next(apis, current_block_id, last_block_id, seen)
+  seen = seen or {}
+  local candidates, known, still_seen = {}, {}, {}
   for _, entry in ipairs(apis) do
     for _, item in ipairs(M.collect(entry.api, entry.host)) do
-      if not seen[item.block_id] then
-        seen[item.block_id] = true
-        all[#all + 1] = item
+      if not known[item.block_id] then
+        known[item.block_id] = true
+        local stamp = item.updated_at or ""
+        if item.state == "done" and item.block_id == current_block_id then
+          seen[item.block_id] = stamp
+        end
+        if item.state == "done" and seen[item.block_id] == stamp then
+          still_seen[item.block_id] = true
+        else
+          candidates[#candidates + 1] = item
+        end
       end
     end
   end
-  local ordered = S.order(all)
+  for block_id in pairs(seen) do
+    if not still_seen[block_id] then
+      seen[block_id] = nil
+    end
+  end
+  local ordered = S.order(candidates)
   local from = last_block_id
   for _, item in ipairs(ordered) do
     if item.block_id == current_block_id then
       from = current_block_id
     end
   end
-  return S.next(ordered, from)
+  local target = S.next(ordered, from)
+  if target and target.state == "done" then
+    seen[target.block_id] = target.updated_at or ""
+  end
+  return target
 end
 
 function M.go(item, apis, queue)
@@ -99,7 +117,7 @@ function M.local_apis(lib)
   return { { api = { call = lib.call } } }
 end
 
-local memory = {}
+local memory = { seen = {} }
 
 if rex and rex.action then
   rex.action({
@@ -109,7 +127,7 @@ if rex and rex.action then
     keywords = "agent claude blocked done attention jump next",
     run = function(ctx)
       local servers = M.local_apis(rex)
-      local item = M.find_next(servers, ctx.block_id, memory.last)
+      local item = M.find_next(servers, ctx.block_id, memory.last, memory.seen)
       memory.last = item and item.block_id
       if not item then
         return { none = true }

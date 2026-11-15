@@ -4,7 +4,7 @@ Agent attention for stock [Rex](https://www.superlogical.com/rex/docs). Nothing 
 
 Rex already shows which programs are working, blocked or done in its sidebar, tab headers and Activity view (`cmd+.`), and Claude Code reports its own state to Rex when it runs directly in a Rex pane. That covers the indicator. Rextina adds:
 
-- **A jump action.** `rextina_next` goes to the agent on this Mac that most needs you: blocked first, then failed, then done, oldest first. Repeated use cycles through them.
+- **A jump action.** `rextina_next` goes to the agent on this Mac that most needs you: blocked first, then failed, then done, oldest first. Repeated use cycles through them. A finished agent is offered once; after the shortcut has taken you to it, it is skipped until it finishes another turn.
 - **Optional banners.** A macOS notification when an agent on this Mac or on any stored host becomes blocked, fails, or finishes a turn that ran for at least 30 seconds. Off unless you install the watcher.
 
 ## Requirements
@@ -71,6 +71,7 @@ It does nothing outside a Rex terminal.
 - An agent inside herdr or tmux inside a Rex pane reports nothing, because the inner multiplexer swallows the status sequence.
 - No banner is raised when Rex is the frontmost app and the agent's pane is the focused pane of its session's active tab.
 - A `done` banner is raised only if the watcher saw the turn start.
+- `rextina_next` remembers which finished agents it has shown you in memory only. A config reload or server restart clears that, and each finished agent is offered once more.
 - `rextina_next` only sees agents on the Rex server that runs it, which on your Mac means local agents. Actions in `init.lua` get no host list from Rex, and the app does not switch hosts when asked to show a remote session. For an agent on another host, find it in the sidebar, which lists every host.
 - Banner titles say "Claude" for every program that reports status.
 
