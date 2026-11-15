@@ -85,7 +85,9 @@ Verified while building (2026-11-15):
   the conversation with no extra prompt, under the same id. An unknown id
   prints "No conversation found with session ID" and leaves the shell.
 
-Not verified: a real server restart.
+A real server restart was done by the user on 2026-11-15: "Save Sessions and
+Restart Server…" then "Restore Sessions" brought back the session, and the
+save was marked closed.
 
 ## Approaches considered
 

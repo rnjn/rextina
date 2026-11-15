@@ -75,7 +75,7 @@ rex.bind("cmd+shift+r", "rextina_restore")
 
 The conversation id is read from `~/.claude/sessions/<pid>.json`, a file Claude Code maintains for its own use and does not document. If a Claude Code update changes it, panes come back as plain shells until Rextina is updated.
 
-A real server restart has not been tested yet; the round trip is tested by saving, destroying and rebuilding a test session on a live server.
+Tested across a real server restart on macOS with Rex 0.1.0-preview.18 and Claude Code 2.1.311: one session with six tabs came back, four Claude Code conversations resumed, and a second "Restore Sessions" did nothing. The automated round trip saves, destroys and rebuilds a test session on a live server.
 
 ## Banners (optional)
 
