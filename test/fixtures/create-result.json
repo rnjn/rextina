@@ -1,0 +1,21 @@
+{
+  "session_id": "session:ns1",
+  "initial_windows": [
+    {
+      "window_id": "window:nw1",
+      "block_ids": [
+        "block:nb1"
+      ],
+      "revision": 1
+    },
+    {
+      "window_id": "window:nw2",
+      "block_ids": [
+        "block:nb2",
+        "block:nb3",
+        "block:nb4"
+      ],
+      "revision": 2
+    }
+  ]
+}

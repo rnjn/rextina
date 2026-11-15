@@ -67,9 +67,24 @@ ships native restore, this feature is deleted.
   start.
 - After a restart the Mac app creates one fresh session.
 
-Not verified: a full save and rebuild round trip; that `claude --resume <id>`
-typed into a new shell resumes without a prompt; how `session.create` behaves
-when a saved directory no longer exists.
+Verified while building (2026-11-15):
+
+- A session with a nested split, recreated by one `session.create` call from
+  its own `session.view`, has the same directions, ratios and pane order, and
+  every pane starts in its saved directory.
+- The `session.create` result lists each new window's `window_id` in order,
+  and the last window becomes the active one.
+- Two sessions may share a label; `session.create` accepts a duplicate.
+- A pane whose `cwd` does not exist still opens, in the home directory, with
+  no error.
+- A `rex do` script with no session argument can read `server.status`,
+  `session.list`, `session.view` and a block's `process` on the local server
+  without attaching.
+- `claude --resume <id>` typed into a new shell as `initial_input` resumes
+  the conversation with no extra prompt, under the same id. An unknown id
+  prints "No conversation found with session ID" and leaves the shell.
+
+Not verified: a real server restart.
 
 ## Approaches considered
 
