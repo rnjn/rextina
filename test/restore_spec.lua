@@ -385,3 +385,60 @@ test("restore of a session with no tabs is skipped, not sent to the server", fun
   eq(1, #r.created)
   eq(true, report.complete)
 end)
+
+test("an id that starts with a hyphen is not a conversation id", function()
+  eq(false, R.valid_id("--dangerously-skip-permissions"))
+  eq(false, R.valid_id("-x"))
+  eq(true, R.valid_id("af241ec7-0933-4996-b79d-41ada75b95bf"))
+  local spec = R.window_spec({ layout = { pane = { claude = "--dangerously-skip-permissions" } } }, { dir_exists = exists({}) })
+  eq(nil, spec.layout.block.options)
+end)
+
+test("build reports a save as incomplete when a view or a process read fails", function()
+  local _, complete_flag = R.build(deps())
+  eq(false, complete_flag)
+  local _, missing_view = R.build(deps({
+    sessions = { { session_id = "session:gone", label = "gone" }, { session_id = "session:s1", label = "infra" } },
+    no_view = { ["session:gone"] = true },
+  }))
+  eq(true, missing_view)
+  local _, missing_process = R.build(deps({ processes = {} }))
+  eq(true, missing_process)
+end)
+
+test("valid_save accepts what build produces", function()
+  eq(true, R.valid_save(R.build(deps())))
+  eq(true, R.valid_save(saved("a", "t1")))
+  eq(true, R.valid_save({ version = 1, instance_id = "a", saved_at = "t", sessions = {} }))
+end)
+
+test("valid_save rejects wrong types anywhere in the tree", function()
+  local function with(change)
+    local s = saved("a", "t1")
+    change(s)
+    return R.valid_save(s)
+  end
+  eq(false, with(function(s) s.saved_at = 5 end))
+  eq(false, with(function(s) s.instance_id = 5 end))
+  eq(false, with(function(s) s.sessions = "x" end))
+  eq(false, with(function(s) s.sessions[1] = 5 end))
+  eq(false, with(function(s) s.sessions[1].tabs = "x" end))
+  eq(false, with(function(s) s.sessions[1].tabs[1] = 5 end))
+  eq(false, with(function(s) s.sessions[1].tabs[1].layout = 5 end))
+  eq(false, with(function(s) s.sessions[1].tabs[2].layout.split = true end))
+  eq(false, with(function(s) s.sessions[1].tabs[2].layout.split.before = nil end))
+  eq(false, with(function(s) s.sessions[1].tabs[2].layout.split.ratio = "half" end))
+  eq(false, with(function(s) s.sessions[1].tabs[1].layout.pane = "x" end))
+  eq(false, R.valid_save(nil))
+  eq(false, R.valid_save("x"))
+end)
+
+test("valid_save rejects absurdly deep nesting", function()
+  local node = { pane = {} }
+  for _ = 1, 300 do
+    node = { split = { direction = "horizontal", ratio = 0.5, before = node, after = { pane = {} } } }
+  end
+  local s = saved("a", "t1")
+  s.sessions[1].tabs[1].layout = node
+  eq(false, R.valid_save(s))
+end)

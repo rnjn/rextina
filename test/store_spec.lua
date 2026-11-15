@@ -185,7 +185,7 @@ test("save run writes and prunes", function()
   local save, path = Save.run(fake_lib(), { dir = dir })
   eq("run-2", save.instance_id)
   eq(dir .. "/run-2.json", path)
-  eq({ "old-3", "old-4", "old-5", "old-6", "run-2" }, ids(store:read_all()))
+  eq({ "old-2", "old-3", "old-4", "old-5", "old-6", "run-2" }, ids(store:read_all()))
   cleanup(dir)
 end)
 
@@ -250,5 +250,103 @@ test("save run does not attach when reads already work", function()
   end
   Save.run(lib, { dir = dir })
   eq(0, attaches.count)
+  cleanup(dir)
+end)
+
+test("read_all skips a save whose structure is wrong and keeps the good one", function()
+  local dir = tmpdir()
+  local store = Store.new(rex, dir)
+  store:write(sample("good"))
+  put(dir, "bad1.json", rex.json.encode({ version = 1, instance_id = "bad1", saved_at = "t", sessions = { 5 } }))
+  put(dir, "bad2.json", rex.json.encode({ version = 1, instance_id = "bad2", saved_at = 5, sessions = {} }))
+  put(dir, "bad3.json", [[{"version":1,"instance_id":"bad3","saved_at":"t","sessions":[{"label":"x","tabs":[{"layout":{"split":true}}]}]}]])
+  eq({ "good" }, ids(store:read_all()))
+  cleanup(dir)
+end)
+
+local function trivial_sample(id, at)
+  local s = sample(id, at)
+  return s
+end
+
+local function real_sample(id, at)
+  local s = sample(id, at)
+  s.sessions[1].tabs[2] = { active = false, layout = { pane = { cwd = "/work/b" } } }
+  return s
+end
+
+test("prune never lets trivial saves push out a real one", function()
+  local dir = tmpdir()
+  local store = Store.new(rex, dir)
+  store:write(real_sample("real", "2026-11-15T08:00:00Z"))
+  for i = 1, 7 do
+    store:write(trivial_sample("crash-" .. i, "2026-11-15T09:0" .. i .. ":00Z"))
+  end
+  store:prune(5)
+  local left = ids(store:read_all())
+  eq(true, left[#left] == "real")
+  eq(6, #left)
+  cleanup(dir)
+end)
+
+test("prune keeps the five newest real saves", function()
+  local dir = tmpdir()
+  local store = Store.new(rex, dir)
+  for i = 1, 7 do
+    store:write(real_sample("run-" .. i, "2026-11-15T08:0" .. i .. ":00Z"))
+  end
+  store:prune(5)
+  eq({ "run-3", "run-4", "run-5", "run-6", "run-7" }, ids(store:read_all()))
+  cleanup(dir)
+end)
+
+test("an incomplete save does not replace a recent complete one from the same run", function()
+  local dir = tmpdir()
+  Save.run(fake_lib(), { dir = dir })
+  local lib = fake_lib()
+  local call = lib.call
+  lib.call = function(method, args)
+    if method == "block.method" then
+      return nil, "shutting down"
+    end
+    return call(method, args)
+  end
+  local _, _, reason = Save.run(lib, { dir = dir })
+  eq("incomplete", reason)
+  eq("/work/a", Store.new(rex, dir):read("run-2").sessions[1].tabs[1].layout.pane.cwd)
+  cleanup(dir)
+end)
+
+test("an incomplete save is written when there is nothing better", function()
+  local dir = tmpdir()
+  local lib = fake_lib()
+  local call = lib.call
+  lib.call = function(method, args)
+    if method == "block.method" then
+      return nil, "gone"
+    end
+    return call(method, args)
+  end
+  local save = Save.run(lib, { dir = dir })
+  eq(true, save ~= nil)
+  eq(true, Store.new(rex, dir):read("run-2") ~= nil)
+  cleanup(dir)
+end)
+
+test("an incomplete save replaces a complete one that is more than ten minutes old", function()
+  local dir = tmpdir()
+  local old = sample("run-2", "2020-01-01T00:00:00Z")
+  Store.new(rex, dir):write(old)
+  local lib = fake_lib()
+  local call = lib.call
+  lib.call = function(method, args)
+    if method == "block.method" then
+      return nil, "gone"
+    end
+    return call(method, args)
+  end
+  local save = Save.run(lib, { dir = dir })
+  eq(true, save ~= nil)
+  eq(true, Store.new(rex, dir):read("run-2").saved_at > "2026")
   cleanup(dir)
 end)

@@ -1,3 +1,5 @@
+local Restore = require("rextina_restore")
+
 local Store = {}
 Store.__index = Store
 
@@ -70,10 +72,8 @@ function Store:load(name)
     return nil
   end
   local save = self.lib.json.decode(text)
-  if type(save) ~= "table" or save.version ~= 1 or type(save.sessions) ~= "table" then
-    return nil
-  end
-  if type(save.instance_id) ~= "string" or save.instance_id .. ".json" ~= name then
+  local checked, valid = pcall(Restore.valid_save, save)
+  if not checked or not valid or save.instance_id .. ".json" ~= name then
     return nil
   end
   return save
@@ -106,10 +106,15 @@ end
 function Store:prune(keep)
   local saves = self:read_all()
   table.sort(saves, function(a, b)
-    return (a.saved_at or "") > (b.saved_at or "")
+    return a.saved_at > b.saved_at
   end)
-  for i = keep + 1, #saves do
-    os.remove(self:path(saves[i].instance_id))
+  local kept = { real = 0, trivial = 0 }
+  for _, save in ipairs(saves) do
+    local kind = Restore.is_trivial(save) and "trivial" or "real"
+    kept[kind] = kept[kind] + 1
+    if kept[kind] > keep then
+      os.remove(self:path(save.instance_id))
+    end
   end
 end
 

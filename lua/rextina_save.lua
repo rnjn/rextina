@@ -51,7 +51,7 @@ end
 
 function M.run(lib, opts)
   local attached = {}
-  local save = Restore.build(M.deps(lib, opts, attached))
+  local save, incomplete = Restore.build(M.deps(lib, opts, attached))
   for _, session_id in ipairs(attached) do
     lib.call("session.detach", { session_id = session_id })
   end
@@ -59,8 +59,12 @@ function M.run(lib, opts)
     return nil, nil, "no server"
   end
   local store = M.store(lib, opts)
-  if #save.sessions == 0 and store:read(save.instance_id) then
+  local existing = store:read(save.instance_id)
+  if existing and #save.sessions == 0 then
     return nil, nil, "empty"
+  end
+  if existing and incomplete and existing.saved_at >= os.date("!%Y-%m-%dT%H:%M:%SZ", os.time() - 600) then
+    return nil, nil, "incomplete"
   end
   local path, err = store:write(save)
   if not path then

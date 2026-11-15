@@ -1,7 +1,8 @@
 local M = {}
 
 local TERMINAL = "com.superlogical.terminal"
-local ID_PATTERN = "^[A-Za-z0-9-]+$"
+local ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]*$"
+local MAX_DEPTH = 32
 
 function M.valid_id(value)
   return type(value) == "string" and value:match(ID_PATTERN) ~= nil
@@ -28,7 +29,7 @@ local function chosen_label(label, generated)
   return label
 end
 
-local function save_pane(deps, session_id, block)
+local function save_pane(deps, session_id, block, flags)
   local pane = {}
   if not block or block.creator_name ~= TERMINAL then
     return pane
@@ -40,11 +41,13 @@ local function save_pane(deps, session_id, block)
     pane.cwd = foreground.cwd
     pane.program = foreground.name
     pane.claude = M.claude_id(process, foreground.pid and deps.claude(foreground.pid))
+  else
+    flags.incomplete = true
   end
   return pane
 end
 
-local function save_layout(deps, session_id, node, blocks)
+local function save_layout(deps, session_id, node, blocks, flags)
   if type(node) ~= "table" then
     return { pane = {} }
   end
@@ -53,12 +56,12 @@ local function save_layout(deps, session_id, node, blocks)
       split = {
         direction = node.split.direction,
         ratio = node.split.ratio,
-        before = save_layout(deps, session_id, node.split.before, blocks),
-        after = save_layout(deps, session_id, node.split.after, blocks),
+        before = save_layout(deps, session_id, node.split.before, blocks, flags),
+        after = save_layout(deps, session_id, node.split.after, blocks, flags),
       },
     }
   end
-  return { pane = save_pane(deps, session_id, blocks[node.block_id]) }
+  return { pane = save_pane(deps, session_id, blocks[node.block_id], flags) }
 end
 
 local function tiled(window)
@@ -82,6 +85,7 @@ function M.build(deps)
     host = deps.host,
     sessions = {},
   }
+  local flags = { incomplete = false }
   for _, session in ipairs(deps.sessions() or {}) do
     local view = deps.view(session.session_id)
     if type(view) == "table" then
@@ -96,14 +100,51 @@ function M.build(deps)
           tabs[#tabs + 1] = {
             label = chosen_label(window.label, "^Window %x+$"),
             active = window.window_id == view.active_window_id,
-            layout = save_layout(deps, session.session_id, layer.layout, blocks),
+            layout = save_layout(deps, session.session_id, layer.layout, blocks, flags),
           }
         end
       end
       save.sessions[#save.sessions + 1] = { label = session.label, tabs = tabs }
+    else
+      flags.incomplete = true
     end
   end
-  return save
+  return save, flags.incomplete
+end
+
+local function valid_layout(node, depth)
+  if type(node) ~= "table" or depth > MAX_DEPTH then
+    return false
+  end
+  if node.split ~= nil then
+    local split = node.split
+    return type(split) == "table"
+      and type(split.direction) == "string"
+      and type(split.ratio) == "number"
+      and valid_layout(split.before, depth + 1)
+      and valid_layout(split.after, depth + 1)
+  end
+  return type(node.pane) == "table"
+end
+
+function M.valid_save(save)
+  if type(save) ~= "table" or save.version ~= 1 then
+    return false
+  end
+  if type(save.instance_id) ~= "string" or type(save.saved_at) ~= "string" or type(save.sessions) ~= "table" then
+    return false
+  end
+  for _, session in pairs(save.sessions) do
+    if type(session) ~= "table" or type(session.tabs) ~= "table" then
+      return false
+    end
+    for _, tab in pairs(session.tabs) do
+      if type(tab) ~= "table" or not valid_layout(tab.layout, 1) then
+        return false
+      end
+    end
+  end
+  return true
 end
 
 local function walk(node, visit)

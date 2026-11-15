@@ -187,7 +187,7 @@ end
 function M.save_restart_action(lib, args, queue)
   args = args or {}
   local save, _, reason = Save.run(lib, { dir = args.dir })
-  if not save and reason ~= "empty" then
+  if not save and reason ~= "empty" and reason ~= "incomplete" then
     return { restarting = false, reason = reason }
   end
   queue("client.server.restart")
