@@ -206,3 +206,49 @@ test("save run reads the conversation id from claude's process file", function()
   eq("ab12-cd", save.sessions[1].tabs[1].layout.pane.claude)
   cleanup(dir)
 end)
+
+test("save run attaches to sessions that refuse unattached reads, then detaches", function()
+  local dir = tmpdir()
+  local lib = fake_lib({ sessions = { { session_id = "session:s1", label = "infra" }, { session_id = "session:s2", label = "web" } } })
+  local call = lib.call
+  local attached, log = {}, {}
+  lib.call = function(method, args)
+    if method == "session.attach" then
+      attached[args.session_id] = true
+      log[#log + 1] = "attach " .. args.session_id
+      return {}
+    end
+    if method == "session.detach" then
+      attached[args.session_id] = nil
+      log[#log + 1] = "detach " .. args.session_id
+      return {}
+    end
+    if (method == "session.view" or method == "block.method") and not attached[args.session_id] then
+      return nil, "stream is not attached to session"
+    end
+    return call(method, args)
+  end
+  local save = Save.run(lib, { dir = dir })
+  eq(2, #save.sessions)
+  eq("fish", save.sessions[2].tabs[1].layout.pane.program)
+  eq({}, attached)
+  eq({ "attach session:s1", "attach session:s2", "detach session:s1", "detach session:s2" }, log)
+  cleanup(dir)
+end)
+
+test("save run does not attach when reads already work", function()
+  local dir = tmpdir()
+  local lib = fake_lib()
+  local call = lib.call
+  local attaches = { count = 0 }
+  lib.call = function(method, args)
+    if method == "session.attach" or method == "session.detach" then
+      attaches.count = attaches.count + 1
+      return {}
+    end
+    return call(method, args)
+  end
+  Save.run(lib, { dir = dir })
+  eq(0, attaches.count)
+  cleanup(dir)
+end)

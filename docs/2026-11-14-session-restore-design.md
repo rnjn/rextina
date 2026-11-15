@@ -77,9 +77,10 @@ Verified while building (2026-11-15):
 - Two sessions may share a label; `session.create` accepts a duplicate.
 - A pane whose `cwd` does not exist still opens, in the home directory, with
   no error.
-- A `rex do` script with no session argument can read `server.status`,
-  `session.list`, `session.view` and a block's `process` on the local server
-  without attaching.
+- A `rex do` script can read only the session named by `REX_SESSION`
+  without attaching. Every other session, and every session when the script
+  runs under launchd, refuses reads until `session.attach` is called. The
+  save attaches when refused and detaches afterwards.
 - `claude --resume <id>` typed into a new shell as `initial_input` resumes
   the conversation with no extra prompt, under the same id. An unknown id
   prints "No conversation found with session ID" and leaves the shell.

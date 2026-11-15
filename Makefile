@@ -16,6 +16,7 @@ test:
 
 test-integration:
 	@sh test/integration.sh
+	@sh test/restore_integration.sh
 
 lint:
 	@shellcheck -x bin/* test/*.sh

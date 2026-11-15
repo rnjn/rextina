@@ -7,7 +7,8 @@ function M.store(lib, opts)
   return Store.new(lib, opts and opts.dir or Store.default_dir(os.getenv))
 end
 
-function M.deps(lib, opts)
+function M.deps(lib, opts, attached)
+  attached = attached or {}
   local home = opts and opts.home or os.getenv("HOME") or ""
   local host = lib.exec({ "hostname", "-s" })
   return {
@@ -20,7 +21,12 @@ function M.deps(lib, opts)
       return type(listed) == "table" and listed.sessions or {}
     end,
     view = function(session_id)
-      return (lib.call("session.view", { session_id = session_id }))
+      local view = lib.call("session.view", { session_id = session_id })
+      if view == nil and lib.call("session.attach", { session_id = session_id }) then
+        attached[#attached + 1] = session_id
+        view = lib.call("session.view", { session_id = session_id })
+      end
+      return view
     end,
     process = function(session_id, block_id)
       return (lib.call("block.method", { session_id = session_id, block_id = block_id, method = "process" }))
@@ -44,7 +50,11 @@ function M.deps(lib, opts)
 end
 
 function M.run(lib, opts)
-  local save = Restore.build(M.deps(lib, opts))
+  local attached = {}
+  local save = Restore.build(M.deps(lib, opts, attached))
+  for _, session_id in ipairs(attached) do
+    lib.call("session.detach", { session_id = session_id })
+  end
   if not save then
     return nil, nil, "no server"
   end

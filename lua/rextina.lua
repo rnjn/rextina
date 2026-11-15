@@ -5,6 +5,8 @@ if dir then
 end
 
 local S = require("rextina_status")
+local Restore = require("rextina_restore")
+local Save = require("rextina_save")
 
 local M = {}
 
@@ -117,6 +119,81 @@ function M.local_apis(lib)
   return { { api = { call = lib.call } } }
 end
 
+local function now()
+  return os.date("!%Y-%m-%dT%H:%M:%SZ")
+end
+
+function M.restore_action(lib, args)
+  args = args or {}
+  local status = lib.call("server.status")
+  if type(status) ~= "table" or not status.instance_id then
+    return { restored = false, reason = "no server" }
+  end
+  local store = Save.store(lib, { dir = args.dir })
+  local save, reason = Restore.choose(store:read_all(), status.instance_id, args.save)
+  if not save then
+    return { restored = false, reason = reason }
+  end
+  local report = Restore.restore(save, {
+    create = function(create_args)
+      return lib.call("session.create", create_args)
+    end,
+    focus_window = function(session_id, window_id)
+      lib.call("session.focus_window", { session_id = session_id, window_id = window_id })
+    end,
+    dir_exists = function(path)
+      local found = lib.exec({ "test", "-d", path })
+      return found ~= nil and found.ok == true
+    end,
+    now = now,
+    persist = function(changed)
+      store:write(changed)
+    end,
+  }, args.save ~= nil)
+  report.restored = true
+  report.instance_id = save.instance_id
+  return report
+end
+
+function M.saves_action(lib, args)
+  args = args or {}
+  local status = lib.call("server.status")
+  local running = type(status) == "table" and status.instance_id or nil
+  local saves = Save.store(lib, { dir = args.dir }):read_all()
+  table.sort(saves, function(a, b)
+    return (a.saved_at or "") > (b.saved_at or "")
+  end)
+  local list = {}
+  for i, save in ipairs(saves) do
+    local state = "open"
+    if save.instance_id == running then
+      state = "running"
+    elseif Restore.is_trivial(save) then
+      state = "trivial"
+    elseif save.closed_at then
+      state = "closed"
+    end
+    list[i] = {
+      instance_id = save.instance_id,
+      saved_at = save.saved_at,
+      host = save.host,
+      sessions = #save.sessions,
+      state = state,
+    }
+  end
+  return list
+end
+
+function M.save_restart_action(lib, args, queue)
+  args = args or {}
+  local save, _, reason = Save.run(lib, { dir = args.dir })
+  if not save and reason ~= "empty" then
+    return { restarting = false, reason = reason }
+  end
+  queue("client.server.restart")
+  return { restarting = true }
+end
+
 local memory = { seen = {} }
 
 if rex and rex.action then
@@ -140,6 +217,37 @@ if rex and rex.action then
         block_id = item.block_id,
         state = item.state,
       }
+    end,
+  })
+end
+
+if rex and rex.action then
+  rex.action({
+    name = "rextina_restore",
+    title = "Restore Sessions",
+    category = "Rextina",
+    keywords = "restore sessions tabs layout restart resume claude",
+    args = { save = "string?" },
+    run = function(_, args)
+      return M.restore_action(rex, { save = args and args.save })
+    end,
+  })
+  rex.action({
+    name = "rextina_saves",
+    title = "List Session Saves",
+    category = "Rextina",
+    keywords = "restore sessions saves list",
+    run = function()
+      return M.saves_action(rex)
+    end,
+  })
+  rex.action({
+    name = "rextina_save_restart",
+    title = "Save Sessions and Restart Server…",
+    category = "Rextina",
+    keywords = "save restart server upgrade restore",
+    run = function()
+      return M.save_restart_action(rex, nil, rex.client.queue)
     end,
   })
 end

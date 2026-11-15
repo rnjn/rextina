@@ -1,0 +1,168 @@
+local N = require("rextina")
+local Store = require("rextina_store")
+
+local function tmpdir()
+  return (rex.exec({ "mktemp", "-d" }).stdout:gsub("%s+$", ""))
+end
+
+local function cleanup(dir)
+  rex.exec({ "rm", "-rf", dir })
+end
+
+local function save(id, at, cwd, extra)
+  local s = {
+    version = 1,
+    instance_id = id,
+    saved_at = at,
+    host = "spode",
+    sessions = {
+      { label = "infra", tabs = {
+        { active = true, layout = { pane = { cwd = cwd or "/tmp" } } },
+        { label = "deploy", active = false, layout = { pane = { cwd = cwd or "/tmp", claude = "ab12-cd" } } },
+      } },
+    },
+  }
+  for k, v in pairs(extra or {}) do
+    s[k] = v
+  end
+  return s
+end
+
+local function lib(opts)
+  opts = opts or {}
+  local l = { json = rex.json, exec = rex.exec, calls = {} }
+  function l.call(method, args)
+    l.calls[#l.calls + 1] = { method, args }
+    if method == "server.status" then
+      if opts.no_server then
+        return nil, "no server"
+      end
+      return { instance_id = "now" }
+    end
+    if method == "session.create" then
+      return rex.json.decode(fixture("create-result.json"))
+    end
+    if method == "session.list" then
+      return { sessions = {} }
+    end
+    return {}
+  end
+  function l.created()
+    local out = {}
+    for _, call in ipairs(l.calls) do
+      if call[1] == "session.create" then
+        out[#out + 1] = call[2]
+      end
+    end
+    return out
+  end
+  return l
+end
+
+test("restore_action reports none when there is nothing to restore", function()
+  local dir = tmpdir()
+  local l = lib()
+  eq({ restored = false, reason = "none" }, N.restore_action(l, { dir = dir }))
+  eq(0, #l.created())
+  cleanup(dir)
+end)
+
+test("restore_action restores the chosen save and marks it closed on disk", function()
+  local dir = tmpdir()
+  local store = Store.new(rex, dir)
+  store:write(save("before", "t1", dir))
+  store:write(save("now", "t2", dir))
+  local l = lib()
+  local report = N.restore_action(l, { dir = dir })
+  eq(true, report.restored)
+  eq(true, report.complete)
+  eq("before", report.instance_id)
+  eq(1, #l.created())
+  eq(dir, l.created()[1].initial_windows[1].layout.block.options.cwd)
+  eq("claude --resume ab12-cd\n", l.created()[1].initial_windows[2].layout.block.options.initial_input)
+  eq(true, store:read("before").closed_at ~= nil)
+  eq({ restored = false, reason = "closed" }, N.restore_action(lib(), { dir = dir }))
+  cleanup(dir)
+end)
+
+test("restore_action by id restores a closed save in full", function()
+  local dir = tmpdir()
+  local store = Store.new(rex, dir)
+  local closed = save("before", "t1", dir, { closed_at = "t3" })
+  closed.sessions[1].restored_at = "t3"
+  store:write(closed)
+  local l = lib()
+  local report = N.restore_action(l, { dir = dir, save = "before" })
+  eq(true, report.restored)
+  eq(1, #l.created())
+  cleanup(dir)
+end)
+
+test("restore_action falls back to home for a directory that is gone", function()
+  local dir = tmpdir()
+  Store.new(rex, dir):write(save("before", "t1", dir .. "/gone"))
+  local l = lib()
+  N.restore_action(l, { dir = dir })
+  eq(nil, l.created()[1].initial_windows[1].layout.block.options)
+  cleanup(dir)
+end)
+
+test("restore_action focuses the saved active tab", function()
+  local dir = tmpdir()
+  Store.new(rex, dir):write(save("before", "t1", dir))
+  local l = lib()
+  N.restore_action(l, { dir = dir })
+  local focused
+  for _, call in ipairs(l.calls) do
+    if call[1] == "session.focus_window" then
+      focused = call[2]
+    end
+  end
+  eq({ session_id = "session:ns1", window_id = "window:nw1" }, focused)
+  cleanup(dir)
+end)
+
+test("restore_action reports no server", function()
+  local dir = tmpdir()
+  eq({ restored = false, reason = "no server" }, N.restore_action(lib({ no_server = true }), { dir = dir }))
+  cleanup(dir)
+end)
+
+test("saves_action labels running, trivial, open and closed saves, newest first", function()
+  local dir = tmpdir()
+  local store = Store.new(rex, dir)
+  store:write(save("now", "t4", dir))
+  store:write(save("open", "t2", dir))
+  store:write(save("closed", "t1", dir, { closed_at = "t9" }))
+  store:write({ version = 1, instance_id = "fresh", saved_at = "t3", host = "spode",
+    sessions = { { label = "x", tabs = { { active = true, layout = { pane = {} } } } } } })
+  eq({
+    { instance_id = "now", saved_at = "t4", host = "spode", sessions = 1, state = "running" },
+    { instance_id = "fresh", saved_at = "t3", host = "spode", sessions = 1, state = "trivial" },
+    { instance_id = "open", saved_at = "t2", host = "spode", sessions = 1, state = "open" },
+    { instance_id = "closed", saved_at = "t1", host = "spode", sessions = 1, state = "closed" },
+  }, N.saves_action(lib(), { dir = dir }))
+  cleanup(dir)
+end)
+
+test("save_restart does not restart when the save fails", function()
+  local queued = {}
+  local result = N.save_restart_action(lib({ no_server = true }), { dir = "/dev/null/saves" }, function(name)
+    queued[#queued + 1] = name
+  end)
+  eq({}, queued)
+  eq(false, result.restarting)
+  eq("no server", result.reason)
+end)
+
+test("save_restart saves then asks the app to restart", function()
+  local dir = tmpdir()
+  local queued = {}
+  local result = N.save_restart_action(lib(), { dir = dir }, function(name)
+    queued[#queued + 1] = name
+  end)
+  eq({ "client.server.restart" }, queued)
+  eq(true, result.restarting)
+  eq(true, Store.new(rex, dir):read("now") ~= nil)
+  cleanup(dir)
+end)
