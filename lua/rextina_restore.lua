@@ -34,6 +34,9 @@ local function save_pane(deps, session_id, block, flags)
   if not block or block.creator_name ~= TERMINAL then
     return pane
   end
+  if flags.ids then
+    pane.block_id = block.block_id
+  end
   pane.label = chosen_label(block.label, "^shell$")
   local process = deps.process(session_id, block.block_id)
   local foreground = type(process) == "table" and process.foreground
@@ -73,7 +76,7 @@ local function tiled(window)
   return nil
 end
 
-function M.build(deps)
+function M.build(deps, ids)
   local status = deps.status()
   if type(status) ~= "table" or not status.instance_id then
     return nil
@@ -85,7 +88,7 @@ function M.build(deps)
     host = deps.host,
     sessions = {},
   }
-  local flags = { incomplete = false }
+  local flags = { incomplete = false, ids = ids }
   for _, session in ipairs(deps.sessions() or {}) do
     local view = deps.view(session.session_id)
     if type(view) == "table" then
@@ -104,7 +107,11 @@ function M.build(deps)
           }
         end
       end
-      save.sessions[#save.sessions + 1] = { label = session.label, tabs = tabs }
+      save.sessions[#save.sessions + 1] = {
+        session_id = ids and session.session_id or nil,
+        label = session.label,
+        tabs = tabs,
+      }
     else
       flags.incomplete = true
     end
@@ -252,15 +259,102 @@ function M.window_spec(tab, deps)
   return { window_label = text(tab.label), layout = api_layout(tab.layout, deps) }
 end
 
+local SHELLS = { sh = true, bash = true, zsh = true, fish = true, dash = true, ksh = true, tcsh = true, nu = true }
+
+local function at_prompt(pane, cwd)
+  local program = type(pane.program) == "string" and pane.program:gsub("^%-", "") or ""
+  return SHELLS[program] == true and pane.cwd == cwd
+end
+
+local function pair(saved, live, pairs_out)
+  if type(saved) ~= "table" or type(live) ~= "table" then
+    return false
+  end
+  if saved.split or live.split then
+    return type(saved.split) == "table"
+      and type(live.split) == "table"
+      and saved.split.direction == live.split.direction
+      and pair(saved.split.before, live.split.before, pairs_out)
+      and pair(saved.split.after, live.split.after, pairs_out)
+  end
+  if type(saved.pane) ~= "table" or type(live.pane) ~= "table" then
+    return false
+  end
+  pairs_out[#pairs_out + 1] = { saved = saved.pane, live = live.pane }
+  return true
+end
+
+local function match(session, candidate)
+  local tabs, live_tabs = session.tabs or {}, candidate.tabs or {}
+  if candidate.label ~= session.label or #tabs == 0 or #tabs ~= #live_tabs then
+    return nil
+  end
+  local found = {}
+  for i, tab in ipairs(tabs) do
+    if tab.label ~= live_tabs[i].label or not pair(tab.layout, live_tabs[i].layout, found) then
+      return nil
+    end
+  end
+  return found
+end
+
+local function running(sessions)
+  local ids = {}
+  for _, session in ipairs(sessions) do
+    for _, tab in ipairs(session.tabs or {}) do
+      walk(tab.layout, function(pane)
+        if pane.claude then
+          ids[pane.claude] = true
+        end
+      end)
+    end
+  end
+  return ids
+end
+
+local function resume(found, session_id, deps, live_ids, entry)
+  entry.in_place = true
+  entry.resumed = 0
+  local skipped = 0
+  for _, both in ipairs(found) do
+    local id = both.saved.claude
+    if M.valid_id(id) and not live_ids[id] then
+      if both.live.block_id
+        and at_prompt(both.live, both.saved.cwd)
+        and deps.write(session_id, both.live.block_id, "claude --resume " .. id .. "\n")
+      then
+        live_ids[id] = true
+        entry.resumed = entry.resumed + 1
+      else
+        skipped = skipped + 1
+      end
+    end
+  end
+  if skipped > 0 then
+    entry.skipped = skipped
+  end
+end
+
 function M.restore(save, deps, all)
   local report = { saved_at = save.saved_at, host = save.host, complete = true, sessions = {} }
+  local live = deps.live and deps.live() or {}
+  local live_ids, used = running(live), {}
   for _, session in ipairs(save.sessions or {}) do
     if all or not session.restored_at then
       local tabs = session.tabs or {}
       local entry = M.counts(session)
       entry.label = session.label
       local created, err = true, nil
-      if #tabs > 0 then
+      local found
+      for i, candidate in ipairs(live) do
+        found = not used[i] and candidate.session_id and match(session, candidate)
+        if found then
+          used[i] = true
+          resume(found, candidate.session_id, deps, live_ids, entry)
+          break
+        end
+      end
+      if not found and #tabs > 0 then
         local windows, active = {}, nil
         for i, tab in ipairs(tabs) do
           windows[i] = M.window_spec(tab, deps)

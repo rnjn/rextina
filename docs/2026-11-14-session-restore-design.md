@@ -89,6 +89,16 @@ A real server restart was done by the user on 2026-11-15: "Save Sessions and
 Restart Server…" then "Restore Sessions" brought back the session, and the
 save was marked closed.
 
+On a second real restart, on 2026-11-16, Rex itself rebuilt the session's
+tabs, splits and directories as plain shells, and "Restore Sessions" then
+built a second copy beside it. Restore now resumes in place: when a live
+session has the same label, tab labels and split shape as a saved one, it
+types `claude --resume <id>` into each matching pane that is at a shell
+prompt in the saved directory, and creates nothing. A pane that is not, or a
+failed write, is reported as skipped. A conversation already running in any
+live pane is not resumed again. With no matching live session the session is
+created as before.
+
 ## Approaches considered
 
 Trigger for restore:

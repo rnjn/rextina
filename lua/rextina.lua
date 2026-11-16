@@ -134,7 +134,20 @@ function M.restore_action(lib, args)
   if not save then
     return { restored = false, reason = reason }
   end
+  local joined = {}
   local report = Restore.restore(save, {
+    live = function()
+      local current = Restore.build(Save.deps(lib, nil, joined), true)
+      return current and current.sessions or {}
+    end,
+    write = function(session_id, block_id, text)
+      return lib.call("block.method", {
+        session_id = session_id,
+        block_id = block_id,
+        method = "write",
+        args = { data = text },
+      }) ~= nil
+    end,
     create = function(create_args)
       return lib.call("session.create", create_args)
     end,
@@ -150,6 +163,9 @@ function M.restore_action(lib, args)
       store:write(changed)
     end,
   }, args.save ~= nil)
+  for _, session_id in ipairs(joined) do
+    lib.call("session.detach", { session_id = session_id })
+  end
   report.restored = true
   report.instance_id = save.instance_id
   return report

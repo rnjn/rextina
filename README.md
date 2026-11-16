@@ -57,7 +57,8 @@ What does not: running processes, scrollback, other programs such as editors and
 How it behaves:
 
 - Nothing is restored unless you run the action.
-- The session Rex creates after a restart is left alone; restored sessions appear beside it.
+- If Rex has already brought a session back with the same name, tabs and splits, Restore resumes the conversations inside it instead of building a copy. It types `claude --resume` only into a pane that is at a shell prompt in the saved directory; other panes are counted as `skipped` in the result. A conversation that is already running is not resumed again.
+- Otherwise the restored sessions appear beside whatever Rex created after the restart, which is left alone.
 - Restore uses the newest save from an earlier server run and skips a save that is only one empty shell, so two restarts in a row do not lose the real layout.
 - Running it twice does nothing the second time. To restore an older or already-restored save, name it: `rex do rextina_restore save=<instance id>`, with the id from `rex do rextina_saves`.
 - If one session fails to rebuild, the others are still restored, and running the action again rebuilds only the one that failed.

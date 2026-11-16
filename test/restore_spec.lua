@@ -442,3 +442,117 @@ test("valid_save rejects absurdly deep nesting", function()
   s.sessions[1].tabs[1].layout = node
   eq(false, R.valid_save(s))
 end)
+
+local function live(processes, opts)
+  opts = opts or {}
+  opts.processes = processes or {
+    ["block:b1"] = proc("fish", 21, "/work/a"),
+    ["block:b2"] = proc("fish", 22, "/work/a"),
+    ["block:b3"] = proc("fish", 23, "/work/b"),
+    ["block:b4"] = proc("fish", 24, "/work/c"),
+  }
+  opts.records = opts.records or {}
+  return R.build(deps(opts), true).sessions
+end
+
+local function in_place(sessions, opts)
+  local r = restorer(opts)
+  r.wrote = {}
+  r.deps.live = function()
+    return sessions
+  end
+  r.deps.write = function(session_id, block_id, text)
+    if opts and opts.no_write then
+      return false
+    end
+    r.wrote[#r.wrote + 1] = { session_id, block_id, text }
+    return true
+  end
+  return r
+end
+
+test("build with ids names each session and pane", function()
+  local sessions = live()
+  eq("session:s1", sessions[1].session_id)
+  eq("block:b1", sessions[1].tabs[1].layout.pane.block_id)
+  eq("block:b4", sessions[1].tabs[2].layout.split.after.pane.block_id)
+  eq(nil, R.build(deps()).sessions[1].session_id)
+end)
+
+test("restore resumes in place when a live session has the same layout", function()
+  local save = R.build(deps())
+  local r = in_place(live())
+  local report = R.restore(save, r.deps)
+  eq(0, #r.created)
+  eq({ { "session:s1", "block:b2", "claude --resume ab12-cd\n" } }, r.wrote)
+  eq({ label = "infra", tabs = 2, panes = 4, resumed = 1, in_place = true }, report.sessions[1])
+  eq(true, report.complete)
+  eq(true, save.closed_at ~= nil)
+end)
+
+test("restore in place skips a pane that is not at a shell prompt in the saved directory", function()
+  for _, process in ipairs({ proc("nvim", 22, "/work/a"), proc("fish", 22, "/elsewhere"), proc("-zsh", 22, "/work/a") }) do
+    local r = in_place(live({
+      ["block:b1"] = proc("fish", 21, "/work/a"),
+      ["block:b2"] = process,
+      ["block:b3"] = proc("fish", 23, "/work/b"),
+      ["block:b4"] = proc("fish", 24, "/work/c"),
+    }))
+    local report = R.restore(R.build(deps()), r.deps)
+    eq(0, #r.created)
+    if process.foreground.name == "-zsh" then
+      eq(1, #r.wrote)
+    else
+      eq(0, #r.wrote)
+      eq({ label = "infra", tabs = 2, panes = 4, resumed = 0, skipped = 1, in_place = true }, report.sessions[1])
+    end
+  end
+end)
+
+test("restore in place counts a failed write as skipped", function()
+  local r = in_place(live(), { no_write = true })
+  local report = R.restore(R.build(deps()), r.deps)
+  eq(1, report.sessions[1].skipped)
+  eq(0, report.sessions[1].resumed)
+end)
+
+test("restore in place leaves a conversation that is already running", function()
+  local r = in_place(live({
+    ["block:b1"] = proc("claude", 12, "/work/a"),
+    ["block:b2"] = proc("fish", 22, "/work/a"),
+    ["block:b3"] = proc("fish", 23, "/work/b"),
+    ["block:b4"] = proc("fish", 24, "/work/c"),
+  }, { records = { [12] = { sessionId = "ab12-cd", kind = "interactive", cwd = "/work/a" } } }))
+  local report = R.restore(R.build(deps()), r.deps)
+  eq(0, #r.wrote)
+  eq(0, #r.created)
+  eq({ label = "infra", tabs = 2, panes = 4, resumed = 0, in_place = true }, report.sessions[1])
+end)
+
+test("restore creates a session when no live session has the same layout", function()
+  local other = live()
+  other[1].tabs[2] = nil
+  local renamed = live()
+  renamed[1].tabs[2].label = "other"
+  local unlabelled = live()
+  unlabelled[1].label = "elsewhere"
+  for _, sessions in ipairs({ other, renamed, unlabelled, {} }) do
+    local r = in_place(sessions)
+    R.restore(R.build(deps()), r.deps)
+    eq(1, #r.created)
+    eq(0, #r.wrote)
+  end
+end)
+
+test("restore uses a live session for only one saved session", function()
+  local save = R.build(deps({ sessions = {
+    { session_id = "session:s1", label = "infra" },
+    { session_id = "session:s2", label = "infra" },
+  } }))
+  local r = in_place(live())
+  local report = R.restore(save, r.deps)
+  eq(1, #r.wrote)
+  eq(1, #r.created)
+  eq(true, report.sessions[1].in_place)
+  eq(nil, report.sessions[2].in_place)
+end)

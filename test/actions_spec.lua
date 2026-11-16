@@ -43,7 +43,27 @@ local function lib(opts)
       return rex.json.decode(fixture("create-result.json"))
     end
     if method == "session.list" then
-      return { sessions = {} }
+      return { sessions = opts.live and { { session_id = "session:live", label = "infra" } } or {} }
+    end
+    if method == "session.view" then
+      if opts.unattached and not l.attached then
+        return nil, "stream is not attached to session"
+      end
+      return { active_window_id = "window:l1", windows = {
+        { window_id = "window:l1", label = "Window 0a1b2c3d", layers = { { kind = "tiled",
+          layout = { block_id = "block:l1" },
+          blocks = { { block_id = "block:l1", label = "shell", creator_name = "com.superlogical.terminal" } } } } },
+        { window_id = "window:l2", label = "deploy", layers = { { kind = "tiled",
+          layout = { block_id = "block:l2" },
+          blocks = { { block_id = "block:l2", label = "shell", creator_name = "com.superlogical.terminal" } } } } },
+      } }
+    end
+    if method == "session.attach" then
+      l.attached = true
+      return {}
+    end
+    if method == "block.method" and args.method == "process" then
+      return { foreground = { name = "fish", pid = 1, cwd = opts.live } }
     end
     return {}
   end
@@ -83,6 +103,32 @@ test("restore_action restores the chosen save and marks it closed on disk", func
   eq(true, store:read("before").closed_at ~= nil)
   eq({ restored = false, reason = "closed" }, N.restore_action(lib(), { dir = dir }))
   cleanup(dir)
+end)
+
+test("restore_action resumes inside a session Rex already brought back", function()
+  for _, unattached in ipairs({ false, true }) do
+    local dir = tmpdir()
+    local store = Store.new(rex, dir)
+    store:write(save("before", "t1", dir))
+    local l = lib({ live = dir, unattached = unattached })
+    local report = N.restore_action(l, { dir = dir })
+    eq(0, #l.created())
+    eq({ label = "infra", tabs = 2, panes = 2, resumed = 1, in_place = true }, report.sessions[1])
+    local wrote, detached = {}, 0
+    for _, call in ipairs(l.calls) do
+      if call[1] == "block.method" and call[2].method == "write" then
+        wrote[#wrote + 1] = call[2]
+      end
+      if call[1] == "session.detach" then
+        detached = detached + 1
+      end
+    end
+    eq({ { session_id = "session:live", block_id = "block:l2", method = "write",
+      args = { data = "claude --resume ab12-cd\n" } } }, wrote)
+    eq(unattached and 1 or 0, detached)
+    eq(true, store:read("before").closed_at ~= nil)
+    cleanup(dir)
+  end
 end)
 
 test("restore_action by id restores a closed save in full", function()

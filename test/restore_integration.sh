@@ -77,4 +77,13 @@ again=$(r "do" "$tmp/restore.lua" "dir=$state" --json)
 assert_eq "closed" "$(printf '%s' "$again" | jq -r '.reason')" rt_second_press_reason
 assert_eq "1" "$(test_sessions | grep -c .)" rt_second_press_creates_nothing
 
+jq '.instance_id = "previous2" | del(.closed_at) | .sessions[0] |= del(.restored_at) | .sessions[0].tabs[0].layout.pane.claude = "rextina-test-0000"' "$state/previous.json" > "$state/previous2.json"
+inplace=$(r "do" "$tmp/restore.lua" "dir=$state" save=previous2 --json)
+assert_eq "true" "$(printf '%s' "$inplace" | jq -r '.sessions[0].in_place')" rt_in_place
+assert_eq "1" "$(printf '%s' "$inplace" | jq -r '.sessions[0].resumed')" rt_in_place_resumed
+assert_eq "1" "$(test_sessions | grep -c .)" rt_in_place_creates_nothing
+sleep 2
+typed=$(r api call -s "$restored" session.view | jq -r '.windows[0].layers[0].blocks[0].block_id')
+assert_eq "1" "$(r block capture -s "$restored" -b "$typed" | grep -c 'claude --resume rextina-test-0000' | sed 's/^[2-9]$/1/')" rt_in_place_typed
+
 finish
