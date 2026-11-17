@@ -134,6 +134,9 @@ function M.restore_action(lib, args)
   if not save then
     return { restored = false, reason = reason }
   end
+  if not Restore.from_here(save, status) then
+    return { restored = false, reason = "other machine", host = save.host }
+  end
   local joined = {}
   local report = Restore.restore(save, {
     live = function()

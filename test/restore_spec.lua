@@ -534,9 +534,7 @@ test("restore creates a session when no live session has the same layout", funct
   other[1].tabs[2] = nil
   local renamed = live()
   renamed[1].tabs[2].label = "other"
-  local unlabelled = live()
-  unlabelled[1].label = "elsewhere"
-  for _, sessions in ipairs({ other, renamed, unlabelled, {} }) do
+  for _, sessions in ipairs({ other, renamed, {} }) do
     local r = in_place(sessions)
     R.restore(R.build(deps()), r.deps)
     eq(1, #r.created)
@@ -555,4 +553,43 @@ test("restore uses a live session for only one saved session", function()
   eq(1, #r.created)
   eq(true, report.sessions[1].in_place)
   eq(nil, report.sessions[2].in_place)
+end)
+
+test("restore resumes in place in a session Rex brought back under another name", function()
+  local sessions = live()
+  sessions[1].label = "silent-alcove"
+  local r = in_place(sessions)
+  local report = R.restore(R.build(deps()), r.deps)
+  eq(0, #r.created)
+  eq(1, #r.wrote)
+  eq(true, report.sessions[1].in_place)
+end)
+
+test("restore prefers the live session with the saved name", function()
+  local sessions = live()
+  sessions[2] = live()[1]
+  sessions[1].label = "silent-alcove"
+  sessions[1].session_id = "session:other"
+  local r = in_place(sessions)
+  R.restore(R.build(deps()), r.deps)
+  eq("session:s1", r.wrote[1][1])
+end)
+
+test("build records the server's host id", function()
+  local d = deps()
+  d.status = function()
+    return { instance_id = "run-2", host_id = "host-a" }
+  end
+  eq("host-a", R.build(d).host_id)
+end)
+
+test("from_here accepts a save from this server or one with no host id", function()
+  eq(true, R.from_here({ host_id = "host-a" }, { host_id = "host-a" }))
+  eq(true, R.from_here({}, { host_id = "host-a" }))
+  eq(false, R.from_here({ host_id = "host-a" }, { host_id = "host-b" }))
+  eq(false, R.from_here({ host_id = "host-a" }, {}))
+end)
+
+test("valid_save rejects a host id that is not a string", function()
+  eq(false, R.valid_save({ version = 1, instance_id = "a", saved_at = "t", host_id = 7, sessions = {} }))
 end)

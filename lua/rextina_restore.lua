@@ -84,6 +84,7 @@ function M.build(deps, ids)
   local save = {
     version = 1,
     instance_id = status.instance_id,
+    host_id = status.host_id,
     saved_at = deps.now(),
     host = deps.host,
     sessions = {},
@@ -141,6 +142,9 @@ function M.valid_save(save)
   if type(save.instance_id) ~= "string" or type(save.saved_at) ~= "string" or type(save.sessions) ~= "table" then
     return false
   end
+  if save.host_id ~= nil and type(save.host_id) ~= "string" then
+    return false
+  end
   for _, session in pairs(save.sessions) do
     if type(session) ~= "table" or type(session.tabs) ~= "table" then
       return false
@@ -190,6 +194,10 @@ function M.is_trivial(save)
   end
   local counts = M.counts(sessions[1])
   return counts.tabs == 1 and counts.panes == 1 and counts.resumed == 0
+end
+
+function M.from_here(save, status)
+  return save.host_id == nil or save.host_id == status.host_id
 end
 
 function M.choose(saves, current_instance_id, wanted_id)
@@ -286,7 +294,7 @@ end
 
 local function match(session, candidate)
   local tabs, live_tabs = session.tabs or {}, candidate.tabs or {}
-  if candidate.label ~= session.label or #tabs == 0 or #tabs ~= #live_tabs then
+  if #tabs == 0 or #tabs ~= #live_tabs then
     return nil
   end
   local found = {}
@@ -346,11 +354,20 @@ function M.restore(save, deps, all)
       entry.label = session.label
       local created, err = true, nil
       local found
-      for i, candidate in ipairs(live) do
-        found = not used[i] and candidate.session_id and match(session, candidate)
+      for _, same_label in ipairs({ true, false }) do
+        for i, candidate in ipairs(live) do
+          found = not found
+            and not used[i]
+            and candidate.session_id
+            and (candidate.label == session.label) == same_label
+            and match(session, candidate)
+          if found then
+            used[i] = true
+            resume(found, candidate.session_id, deps, live_ids, entry)
+            break
+          end
+        end
         if found then
-          used[i] = true
-          resume(found, candidate.session_id, deps, live_ids, entry)
           break
         end
       end

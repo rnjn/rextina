@@ -37,7 +37,7 @@ local function lib(opts)
       if opts.no_server then
         return nil, "no server"
       end
-      return { instance_id = "now" }
+      return { instance_id = "now", host_id = opts.host_id or "here" }
     end
     if method == "session.create" then
       return rex.json.decode(fixture("create-result.json"))
@@ -129,6 +129,19 @@ test("restore_action resumes inside a session Rex already brought back", functio
     eq(true, store:read("before").closed_at ~= nil)
     cleanup(dir)
   end
+end)
+
+test("restore_action refuses a save when it is talking to another machine's server", function()
+  local dir = tmpdir()
+  local store = Store.new(rex, dir)
+  store:write(save("before", "t1", dir, { host_id = "here" }))
+  local l = lib({ host_id = "fred" })
+  eq({ restored = false, reason = "other machine", host = "spode" }, N.restore_action(l, { dir = dir }))
+  eq({ restored = false, reason = "other machine", host = "spode" }, N.restore_action(l, { dir = dir, save = "before" }))
+  eq(0, #l.created())
+  eq(nil, store:read("before").closed_at)
+  eq(true, N.restore_action(lib(), { dir = dir }).restored)
+  cleanup(dir)
 end)
 
 test("restore_action by id restores a closed save in full", function()

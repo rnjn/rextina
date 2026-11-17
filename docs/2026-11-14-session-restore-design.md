@@ -99,6 +99,17 @@ failed write, is reported as skipped. A conversation already running in any
 live pane is not resumed again. With no matching live session the session is
 created as before.
 
+On 2026-11-17 a restore was run while the app had a tab on another machine
+selected. This machine's save was marked restored but its conversations did
+not resume here; the calls most likely went to the selected machine's
+server, though this was not reproduced. Rex had also brought the tabs back
+under a new session name, which the in-place match would have refused. Two
+changes followed. A save records the server's `host_id`, and restore stops
+with `other machine` when the server it is talking to has a different one;
+saves written before this have no `host_id` and are not checked. The
+in-place match no longer needs the session name to be the same, only the
+tab labels and split shape, and prefers a live session with the saved name.
+
 ## Approaches considered
 
 Trigger for restore:
